@@ -1,0 +1,263 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  RESIDENT
+  MANAGER
+  TECHNICIAN
+  OWNER
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  EMERGENCY
+}
+
+enum Status {
+  PENDING
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CONFIRMED
+}
+
+enum AttachmentType {
+  ISSUE
+  COMPLETION
+}
+
+model User {
+  id             String        @id @default(cuid())
+  name           String
+  email          String        @unique
+  password       String
+  phone          String?
+  role           Role          @default(RESIDENT)
+  organizationId String?
+  organization   Organization? @relation("OrganizationMembers", fields: [organizationId], references: [id], onDelete: SetNull)
+  unitId         String?
+  unit           Unit?         @relation("UnitResidents", fields: [unitId], references: [id], onDelete: SetNull)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @default(now()) @updatedAt
+
+  ownedOrganizations  Organization[]  @relation("OrganizationOwner")
+  buildings           Building[]      @relation("OwnerBuildings")
+  submittedComplaints Complaint[]     @relation("ResidentComplaints")
+  assignedComplaints  Complaint[]     @relation("TechnicianComplaints")
+  technicianTasks     Assignment[]    @relation("AssignmentTechnician")
+  createdAssignments  Assignment[]    @relation("AssignmentCreator")
+  comments            Comment[]       @relation("UserComments")
+  attachments         Attachment[]    @relation("UserAttachments")
+  statusChanges       StatusHistory[] @relation("UserStatusChanges")
+  notifications       Notification[]  @relation("UserNotifications")
+
+  @@index([organizationId])
+  @@index([unitId])
+  @@index([role])
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  address   String?
+  ownerId   String
+  owner     User     @relation("OrganizationOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  members    User[]     @relation("OrganizationMembers")
+  buildings  Building[]
+  categories Category[]
+
+  @@index([ownerId])
+}
+
+model Building {
+  id             String        @id @default(cuid())
+  name           String
+  address        String
+  totalFloors    Int           @default(1)
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  ownerId        String
+  owner          User          @relation("OwnerBuildings", fields: [ownerId], references: [id], onDelete: Restrict)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @default(now()) @updatedAt
+
+  units      Unit[]
+  complaints Complaint[]
+
+  @@index([organizationId])
+  @@index([ownerId])
+}
+
+model Unit {
+  id         String   @id @default(cuid())
+  floor      String
+  unitNumber String
+  buildingId String
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  residents  User[]      @relation("UnitResidents")
+  complaints Complaint[]
+
+  @@index([buildingId])
+}
+
+model Category {
+  id             String        @id @default(cuid())
+  name           String
+  description    String?
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+
+  complaints Complaint[]
+
+  @@index([organizationId])
+}
+
+model Complaint {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  priority    Priority @default(MEDIUM)
+  status      Status   @default(PENDING)
+  imageUrl    String?
+
+  residentId String
+  resident   User   @relation("ResidentComplaints", fields: [residentId], references: [id], onDelete: Restrict)
+
+  technicianId String?
+  technician   User?   @relation("TechnicianComplaints", fields: [technicianId], references: [id], onDelete: SetNull)
+
+  buildingId String?
+  building   Building? @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+
+  unitId String
+  unit   Unit   @relation(fields: [unitId], references: [id], onDelete: Restrict)
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  assignments   Assignment[]
+  comments      Comment[]
+  attachments   Attachment[]
+  statusHistory StatusHistory[]
+  aiAnalysis    AIAnalysis?
+
+  @@index([residentId])
+  @@index([technicianId])
+  @@index([buildingId])
+  @@index([unitId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([priority])
+}
+
+model Assignment {
+  id           String    @id @default(cuid())
+  complaintId  String
+  complaint    Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  technicianId String
+  technician   User      @relation("AssignmentTechnician", fields: [technicianId], references: [id], onDelete: Cascade)
+  assignedById String
+  assignedBy   User      @relation("AssignmentCreator", fields: [assignedById], references: [id], onDelete: Cascade)
+  notes        String?
+  assignedAt   DateTime  @default(now())
+
+  @@index([complaintId])
+  @@index([technicianId])
+  @@index([assignedById])
+}
+
+model Comment {
+  id          String    @id @default(cuid())
+  content     String
+  complaintId String
+  complaint   Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User      @relation("UserComments", fields: [authorId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@index([complaintId])
+  @@index([authorId])
+}
+
+model Attachment {
+  id           String         @id @default(cuid())
+  url          String
+  fileName     String?
+  type         AttachmentType @default(ISSUE)
+  complaintId  String
+  complaint    Complaint      @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  uploadedById String
+  uploadedBy   User           @relation("UserAttachments", fields: [uploadedById], references: [id], onDelete: Cascade)
+  createdAt    DateTime       @default(now())
+
+  @@index([complaintId])
+  @@index([uploadedById])
+}
+
+model StatusHistory {
+  id          String    @id @default(cuid())
+  complaintId String
+  complaint   Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  fromStatus  Status?
+  toStatus    Status
+  note        String?
+  changedById String
+  changedBy   User      @relation("UserStatusChanges", fields: [changedById], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@index([complaintId])
+  @@index([changedById])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+}
+
+model AIAnalysis {
+  id                   String    @id @default(cuid())
+  complaintId          String    @unique
+  complaint            Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  suggestedCategory    String?
+  suggestedPriority    Priority?
+  issueSummary         String?
+  assignedTeam         String?
+  suggestedResponse    String?
+  troubleshootingSteps String[]  @default([])
+  isDuplicate          Boolean   @default(false)
+  duplicateOfId        String?
+  createdAt            DateTime  @default(now())
+
+  @@index([duplicateOfId])
+}
